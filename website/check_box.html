@@ -1,0 +1,33 @@
+<!DOCTYPE html PUBLIC"-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!--
+Copyright 2017-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+    http://aws.amazon.com/asl/
+or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied.
+See the License for the specific language governing permissions and limitations under the License.
+-->
+<html>
+  <head>
+    <title>AWS CodeBuild automation - Check Box.</title>
+  </head>
+
+  <body>
+    <script type="text/javascript">
+    function checkbox_text(boxid, divid)
+    {
+      var elm = document.getElementById(divid)
+      elm.style.display = boxid.checked? "":"none"
+    }
+    </script>
+    <h1>Check the box...</h1>
+      <form name=checkbox_form>
+        <input type="checkbox" id="box1" name=box1 value="checkbox1" onclick="checkbox_text(this, 'cbbox1')">Checkbox 1<br>
+        <div id = "cbbox1" style="display:none;">Checkbox 1 checked.</div><br>
+        <input type="checkbox" id="box2" name=box2 value="checkbox2" onclick="checkbox_text(this, 'cbbox2')">Checkbox 2<br>
+        <div id = "cbbox2" style="display:none;">Checkbox 2 checked.</div><br>
+        <input type="checkbox" id="box3" name=box3 value="checkbox3" onclick="checkbox_text(this, 'cbbox3')"  disabled>Checkbox 3<br>
+        <div id = "cbbox3" style="display:none;">Checkbox 3 checked.</div><br>
+      </form>
+  </body>
+</html>

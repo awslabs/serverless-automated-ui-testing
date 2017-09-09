@@ -1,0 +1,14 @@
+[
+  {
+  "ParameterKey": "SourceRepo",
+  "ParameterValue": "automated-ui-testing"
+  },
+  {
+  "ParameterKey": "ApprovalTopic",
+  "ParameterValue": "prod-approval-topic"
+  },
+  {
+  "ParameterKey": "ProductionBucket",
+  "ParameterValue": "production-s3-website-bucket"
+  }
+]

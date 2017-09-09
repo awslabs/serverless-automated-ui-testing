@@ -1,0 +1,979 @@
+Description: >
+  Template which creates automated UI testing using Selenium with AWS CodeBuild and AWS CodePipeline.
+
+Parameters:
+  SourceRepo:
+    Description: Enter the name of CodeCommit source repository
+    Type: String
+  ApprovalTopic:
+    Description: Enter the name of the SNS topic to which approval notification should be sent
+    Type: String
+  ProductionBucket:
+    Description: Enter the name of the production S3 bucket
+    Type: String
+
+Resources:
+  TestWebsite:
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: PublicRead
+      BucketName:
+        Fn::Sub: test-website-${AWS::StackName}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: TestWebsite-${AWS::StackName}
+
+  StatusWebsite:
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: PublicRead
+      BucketName:
+        Fn::Sub: status-website-${AWS::StackName}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: StatusWebsite-${AWS::StackName}
+
+  TestOutput:
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: Private
+      BucketName:
+        Fn::Sub: test-output-${AWS::StackName}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: TestOutput-${AWS::StackName}
+
+  CodePipelineArtifact:
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: Private
+      BucketName:
+        Fn::Sub: codepipeline-artifact-${AWS::StackName}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: CodePipelineArtifact-${AWS::StackName}
+
+  ModuleTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: "module"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "module"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName:
+        Fn::Sub: ModuleTable-${AWS::StackName}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: ModuleTable-${AWS::StackName}
+
+  StatusTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: "module"
+          AttributeType: "S"
+        -
+          AttributeName: "testcaseid"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "module"
+          KeyType: "HASH"
+        -
+          AttributeName: "testcaseid"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName:
+        Fn::Sub: StatusTable-${AWS::StackName}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: StatusTable-${AWS::StackName}
+
+  StatusPageCognitoIP:
+    Type: "AWS::Cognito::IdentityPool"
+    Properties:
+      IdentityPoolName:
+        Fn::Sub: StatusPageCognitoIP_${AWS::StackName}
+      AllowUnauthenticatedIdentities: true
+
+  StatusPageUnAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+        RoleName:
+          Fn::Sub: StatusPageUnAuthRole-${AWS::StackName}
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Effect: "Allow"
+              Principal:
+                Federated:
+                  - "cognito-identity.amazonaws.com"
+              Action:
+                - "sts:AssumeRoleWithWebIdentity"
+              Condition:
+                StringEquals:
+                  "cognito-identity.amazonaws.com:aud":
+                    Ref: StatusPageCognitoIP
+                ForAnyValue:StringLike:
+                  "cognito-identity.amazonaws.com:amr": unauthenticated
+        Path: /
+        Policies:
+            -
+              PolicyName:
+                Fn::Sub: StatusPageUnAuthRole-${AWS::StackName}-Policy
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  -
+                    Effect: "Allow"
+                    Action:
+                      - "dynamodb:Scan"
+                    Resource:
+                      - Fn::GetAtt: [ ModuleTable, Arn ]
+                      - Fn::GetAtt: [ StatusTable, Arn ]
+
+  AttachCognitoUnAuthRole:
+    Type: "AWS::Cognito::IdentityPoolRoleAttachment"
+    Properties:
+      IdentityPoolId:
+        Ref: StatusPageCognitoIP
+      Roles:
+        unauthenticated:
+          Fn::GetAtt: [ StatusPageUnAuthRole, Arn ]
+
+  CodeBuildServiceRole:
+      Type: AWS::IAM::Role
+      Properties:
+          RoleName:
+            Fn::Sub: CodeBuildServiceRole-${AWS::StackName}
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Principal:
+                  Service:
+                    - "codebuild.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+          Path: /service-role/
+          Policies:
+              -
+                PolicyName:
+                  Fn::Sub: CodeBuildServiceRole-${AWS::StackName}-Policy
+                PolicyDocument:
+                  Version: "2012-10-17"
+                  Statement:
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "codecommit:ListBranches"
+                        - "codecommit:ListRepositories"
+                        - "codecommit:BatchGetRepositories"
+                        - "codecommit:Get*"
+                        - "codecommit:GitPull"
+                      Resource:
+                        - Fn::Sub: arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${SourceRepo}
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "logs:CreateLogGroup"
+                        - "logs:CreateLogStream"
+                        - "logs:PutLogEvents"
+                      Resource:
+                        - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "s3:PutObject"
+                        - "s3:GetObject"
+                        - "s3:GetObjectVersion"
+                        - "s3:ListBucket"
+                      Resource:
+                        - Fn::Sub: arn:aws:s3:::test-website-${AWS::StackName}/*
+                        - Fn::Sub: arn:aws:s3:::test-website-${AWS::StackName}
+                        - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}/*
+                        - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}
+                        - Fn::Sub: arn:aws:s3:::codepipeline-${AWS::Region}-*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "dynamodb:GetItem"
+                        - "dynamodb:PutItem"
+                        - "dynamodb:UpdateItem"
+                      Resource:
+                        - Fn::GetAtt: [ ModuleTable, Arn ]
+                        - Fn::GetAtt: [ StatusTable, Arn ]
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "lambda:CreateFunction"
+                        - "lambda:GetFunction"
+                        - "lambda:InvokeFunction"
+                        - "lambda:ListFunctions"
+                        - "lambda:UpdateFunctionCode"
+                        - "lambda:UpdateFunctionConfiguration"
+                        - "iam:PassRole"
+                      Resource:
+                        - "*"
+
+  S3UploadLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+          RoleName:
+            Fn::Sub: S3UploadLambdaRole-${AWS::StackName}
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Principal:
+                  Service:
+                    - "lambda.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+          Path: /
+          Policies:
+              -
+                PolicyName:
+                  Fn::Sub: S3UploadLambdaRole-${AWS::StackName}-Policy
+                PolicyDocument:
+                  Version: "2012-10-17"
+                  Statement:
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "logs:CreateLogGroup"
+                        - "logs:CreateLogStream"
+                        - "logs:PutLogEvents"
+                      Resource:
+                        - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "s3:PutObject"
+                        - "s3:GetObject"
+                        - "s3:GetObjectVersion"
+                        - "s3:ListBucket"
+                        - "s3:PutObjectAcl"
+                      Resource:
+                        - Fn::Sub: arn:aws:s3:::test-website-${AWS::StackName}/*
+                        - Fn::Sub: arn:aws:s3:::test-website-${AWS::StackName}
+                        - Fn::Sub: arn:aws:s3:::status-website-${AWS::StackName}/*
+                        - Fn::Sub: arn:aws:s3:::status-website-${AWS::StackName}
+                        - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}/*
+                        - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}
+                        - Fn::Sub: arn:aws:s3:::codepipeline-${AWS::Region}-*
+                        - Fn::Sub: arn:aws:s3:::${ProductionBucket}
+                        - Fn::Sub: arn:aws:s3:::${ProductionBucket}/*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "codepipeline:PutApprovalResult"
+                        - "codepipeline:PutJobFailureResult"
+                        - "codepipeline:PutJobSuccessResult"
+                      Resource:
+                        - "*"
+
+  PhatomJSLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+          RoleName:
+            Fn::Sub: PhatomJSLambdaRole-${AWS::StackName}
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Principal:
+                  Service:
+                    - "lambda.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+          Path: /
+          Policies:
+              -
+                PolicyName:
+                  Fn::Sub: PhatomJSLambdaRole-${AWS::StackName}-Policy
+                PolicyDocument:
+                  Version: "2012-10-17"
+                  Statement:
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "logs:CreateLogGroup"
+                        - "logs:CreateLogStream"
+                        - "logs:PutLogEvents"
+                      Resource:
+                        - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "dynamodb:GetItem"
+                        - "dynamodb:PutItem"
+                        - "dynamodb:UpdateItem"
+                      Resource:
+                        - Fn::GetAtt: [ StatusTable, Arn ]
+
+  BuildSpecLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+          RoleName:
+            Fn::Sub: BuildSpecLambdaRole-${AWS::StackName}
+          AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Principal:
+                  Service:
+                    - "lambda.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+          Path: /
+          Policies:
+              -
+                PolicyName:
+                  Fn::Sub: BuildSpecLambdaRole-${AWS::StackName}-Policy
+                PolicyDocument:
+                  Version: "2012-10-17"
+                  Statement:
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "logs:CreateLogGroup"
+                        - "logs:CreateLogStream"
+                        - "logs:PutLogEvents"
+                      Resource:
+                        - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+                    -
+                      Effect: "Allow"
+                      Action:
+                        - "codebuild:UpdateProject"
+                      Resource:
+                        - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/TestPhantomJSProject-${AWS::StackName}
+
+  CodePipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName:
+        Fn::Sub: CodePipelineRole-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        -
+          PolicyName:
+            Fn::Sub: CodePipelineRole-${AWS::StackName}-Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:DeleteObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:ListBucket"
+                  - "s3:PutObject"
+                  - "s3:GetBucketPolicy"
+                Resource:
+                  - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}
+                  - Fn::Sub: arn:aws:s3:::codepipeline-artifact-${AWS::StackName}/*
+              -
+                Effect: "Allow"
+                Action:
+                  - "codecommit:ListBranches"
+                  - "codecommit:ListRepositories"
+                  - "codecommit:BatchGetRepositories"
+                  - "codecommit:Get*"
+                  - "codecommit:GitPull"
+                  - "codecommit:UploadArchive"
+                Resource:
+                  - Fn::Sub: arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${SourceRepo}
+              -
+                Effect: "Allow"
+                Action:
+                  - "codebuild:StartBuild"
+                  - "codebuild:BatchGetBuilds"
+                Resource:
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/TestChromeProject-${AWS::StackName}
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/TestFirefoxProject-${AWS::StackName}
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/TestPhantomJSProject-${AWS::StackName}
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:build/TestChromeProject-${AWS::StackName}:*
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:build/TestFirefoxProject-${AWS::StackName}:*
+                  - Fn::Sub: arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:build/TestPhantomJSProject-${AWS::StackName}:*
+              -
+                Effect: "Allow"
+                Action:
+                  - "lambda:GetAlias"
+                  - "lambda:GetFunction"
+                  - "lambda:InvokeAsync"
+                  - "lambda:InvokeFunction"
+                  - "lambda:ListAliases"
+                  - "lambda:ListVersionsByFunction"
+                Resource:
+                  - Fn::Sub: arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*
+              -
+                Effect: "Allow"
+                Action:
+                  - "lambda:ListFunctions"
+                Resource:
+                  - "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "sns:Publish"
+                Resource:
+                  - Fn::Sub: arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ApprovalTopic}
+
+  TestChromeProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name:
+        Fn::Sub: TestChromeProject-${AWS::StackName}
+      Description: Run UI testing on Chrome browser
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildServiceRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location:
+          Ref: CodePipelineArtifact
+        Name:
+          Fn::Sub: TestChromeProject-${AWS::StackName}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: selenium/standalone-chrome
+        EnvironmentVariables:
+          - Name: BROWSER
+            Value: chrome
+          - Name: WebURL
+            Value:
+              Fn::GetAtt: [ TestWebsite, WebsiteURL ]
+          - Name: ArtifactBucket
+            Value:
+              Ref: TestWebsite
+          - Name: ModuleTable
+            Value:
+              Ref: ModuleTable
+          - Name: StatusTable
+            Value:
+              Ref: StatusTable
+          - Name: MODULES
+            Value: mod1,mod2,mod3
+      Source:
+        Location:
+          Fn::Sub: https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${SourceRepo}
+        Type: CODECOMMIT
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: TestChromeProject-${AWS::StackName}
+
+  TestFirefoxProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name:
+        Fn::Sub: TestFirefoxProject-${AWS::StackName}
+      Description: Run UI testing on Firefox browser
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildServiceRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location:
+          Ref: CodePipelineArtifact
+        Name:
+          Fn::Sub: TestFirefoxProject-${AWS::StackName}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: selenium/standalone-firefox
+        EnvironmentVariables:
+          - Name: BROWSER
+            Value: firefox
+          - Name: WebURL
+            Value:
+              Fn::GetAtt: [ TestWebsite, WebsiteURL ]
+          - Name: ArtifactBucket
+            Value:
+              Ref: TestWebsite
+          - Name: ModuleTable
+            Value:
+              Ref: ModuleTable
+          - Name: StatusTable
+            Value:
+              Ref: StatusTable
+          - Name: MODULES
+            Value: mod1,mod2,mod3
+      Source:
+        Location:
+          Fn::Sub: https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${SourceRepo}
+        Type: CODECOMMIT
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: TestFirefoxProject-${AWS::StackName}
+
+  TestPhantomJSProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name:
+        Fn::Sub: TestPhantomJSProject-${AWS::StackName}
+      Description: Run UI testing on PhantomJS
+      ServiceRole:
+        Fn::GetAtt: [ CodeBuildServiceRole, Arn ]
+      Artifacts:
+        Type: S3
+        Location:
+          Ref: CodePipelineArtifact
+        Name:
+          Fn::Sub: TestPhantomJSProject-${AWS::StackName}
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/python:2.7.12
+        EnvironmentVariables:
+          - Name: BROWSER
+            Value: phantomjs
+          - Name: WebURL
+            Value:
+              Fn::GetAtt: [ TestWebsite, WebsiteURL ]
+          - Name: ArtifactBucket
+            Value:
+              Ref: TestWebsite
+          - Name: ModuleTable
+            Value:
+              Ref: ModuleTable
+          - Name: StatusTable
+            Value:
+              Ref: StatusTable
+          - Name: MODULES
+            Value: mod1,mod2,mod3
+          - Name: LambdaRole
+            Value:
+              Fn::GetAtt: [ PhatomJSLambdaRole, Arn ]
+      Source:
+        Location:
+          Fn::Sub: https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${SourceRepo}
+        Type: CODECOMMIT
+      TimeoutInMinutes: 15
+      EncryptionKey:
+        Fn::Sub: arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: TestPhantomJSProject-${AWS::StackName}
+
+  S3UploadFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.lambda_handler"
+      Role:
+        Fn::GetAtt:
+          - "S3UploadLambdaRole"
+          - "Arn"
+      Code:
+        ZipFile: |
+          from __future__ import print_function
+          from boto3.session import Session
+          from botocore.vendored import requests
+          import json
+          import boto3
+          import random
+          import string
+          import botocore
+          import traceback
+          import zipfile
+          import os.path
+          import os
+
+          print('Loading function')
+          code_pipeline = boto3.client('codepipeline')
+
+
+          def lambda_handler(event, context):
+              try:
+                  if 'StackId' in event:
+                      responseBody = {'Status': 'SUCCESS',
+                                      'Reason': context.log_stream_name,
+                                      'PhysicalResourceId': context.log_stream_name,
+                                      'StackId': event['StackId'],
+                                      'RequestId': event['RequestId'],
+                                      'LogicalResourceId': event['LogicalResourceId'],
+                                      'Data': 'Created/Deleted function successfully'}
+                      requests.put(event['ResponseURL'], data=json.dumps(responseBody))
+                  print(event)
+                  s3 = boto3.resource('s3')
+                  rdmstring = ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(32)])
+                  tmp_file = '/tmp/' + rdmstring + '.zip'
+                  job_id = event['CodePipeline.job']['id']
+                  job_data = event['CodePipeline.job']['data']
+                  artifacts = job_data['inputArtifacts']
+                  bucket = artifacts[0]['location']['s3Location']['bucketName']
+                  key = artifacts[0]['location']['s3Location']['objectKey']
+                  user_parameters = job_data['actionConfiguration']['configuration']['UserParameters']
+                  params = json.loads(user_parameters)
+                  if 'bucket' not in params or 'path' not in params:
+                      raise Exception('Your UserParameters JSON must include the both path and bucket name')
+
+                  s3.meta.client.download_file(bucket, key, tmp_file)
+                  with zipfile.ZipFile(tmp_file, 'r') as z:
+                    z.extractall('/tmp/' + rdmstring)
+
+                  filelist = []
+                  for dirname, dirnames, filenames in os.walk('/tmp/' + rdmstring + '/' + params['path']):
+                      for filename in filenames:
+                          filelist.append(os.path.join(dirname, filename))
+
+                  for f in filelist:
+                      bn = os.path.basename(f)
+                      ft = bn.split('.')[1].lower()
+                      if ft == 'html':
+                          s3.meta.client.upload_file(f, params['bucket'], bn, ExtraArgs={'ContentType': "text/html", 'ACL': "public-read"})
+                      elif ft == 'js':
+                          if bn == 'generatetable.js':
+                              replacements = {'Status_Table': os.environ['StatusTable'], 'Modules_Table': os.environ['ModuleTable'], 'AWS_REGION': os.environ['REGION'], 'Cognito_IDP_ID': os.environ['Cognito_IDP_ID']}
+                              lines = []
+                              with open(f) as infile:
+                                  for line in infile:
+                                      for src, target in replacements.iteritems():
+                                          line = line.replace(src, target)
+                                      lines.append(line)
+                              with open(f, 'w') as outfile:
+                                  for line in lines:
+                                      outfile.write(line)
+                          s3.meta.client.upload_file(f, params['bucket'], bn, ExtraArgs={'ContentType': "application/x-javascript", 'ACL': "public-read"})
+                      elif ft == 'png':
+                          s3.meta.client.upload_file(f, params['bucket'], bn, ExtraArgs={'ContentType': "image/png", 'ACL': "public-read"})
+                      else:
+                          s3.meta.client.upload_file(f, params['bucket'], bn, ExtraArgs={'ACL': "public-read"})
+
+                  code_pipeline.put_job_success_result(jobId=job_id)
+
+              except Exception as e:
+                  print(e)
+                  traceback.print_exc()
+                  print('Putting job failure')
+                  code_pipeline.put_job_failure_result(jobId=job_id,
+                                                       failureDetails={'message': 'Function exception: ' + str(e),
+                                                                       'type': 'JobFailed'})
+
+              return "Complete."
+
+
+      Runtime: "python2.7"
+      Environment:
+        Variables:
+          ModuleTable:
+            Fn::Sub: ModuleTable-${AWS::StackName}
+          StatusTable:
+            Fn::Sub: StatusTable-${AWS::StackName}
+          Cognito_IDP_ID:
+            Ref: StatusPageCognitoIP
+          REGION:
+            Ref: AWS::Region
+      Timeout: 150
+      MemorySize: 256
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: S3UploadFunction-${AWS::StackName}
+
+  BuildSpecFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "index.lambda_handler"
+      Role:
+        Fn::GetAtt:
+          - "BuildSpecLambdaRole"
+          - "Arn"
+      Code:
+        ZipFile: |
+          from botocore.vendored import requests
+          import json
+          import boto3
+          import botocore
+          import traceback
+          import os
+
+
+          def sendResponse(event, context, responseStatus, responseData):
+              responseBody = {'Status': responseStatus,
+                              'Reason': 'See the details in CloudWatch Log Stream: ' + context.log_stream_name,
+                              'PhysicalResourceId': context.log_stream_name,
+                              'StackId': event['StackId'],
+                              'RequestId': event['RequestId'],
+                              'LogicalResourceId': event['LogicalResourceId'],
+                              'Data': responseData}
+              print 'RESPONSE BODY:\n' + json.dumps(responseBody)
+              try:
+                  req = requests.put(event['ResponseURL'], data=json.dumps(responseBody))
+                  if req.status_code != 200:
+                      print req.text
+                      raise Exception('Recieved non 200 response while sending response to CFN.')
+                  return
+              except requests.exceptions.RequestException as e:
+                  print e
+                  raise
+
+          def lambda_handler(event, context):
+              print event
+              try:
+                  if event['RequestType'] == 'Delete':
+                      sendResponse(event, context, 'SUCCESS', {})
+                      return 0
+                  cb = boto3.client('codebuild')
+                  cb_res = cb.update_project(name=os.environ['CB_Name'], source={"type": "CODECOMMIT", "location": os.environ['CC_URL'], "buildspec": os.environ['BS_PATH']})
+                  responseData = {'Success': 'Successfully updated CodeBuild project'}
+                  sendResponse(event, context, 'SUCCESS', {})
+
+              except Exception as e:
+                  print 'Received client error: %s' % e
+                  responseData = {'Failed': 'Received client error: %s' % e}
+                  sendResponse(event, context, 'FAILED', responseData)
+
+      Runtime: "python2.7"
+      Environment:
+        Variables:
+          CB_Name:
+            Ref: TestPhantomJSProject
+          CC_URL:
+            Fn::Sub: https://git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${SourceRepo}
+          BS_PATH: buildspec-phantomjs.yml
+      Timeout: 150
+      MemorySize: 256
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: BuildSpecFunction-${AWS::StackName}
+
+  UpdateBuildProject:
+    Type: Custom::UpdateBuildProject
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: [ BuildSpecFunction, Arn ]
+
+  AutomatedUITestPipeline:
+    DependsOn: UpdateBuildProject
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name:
+        Fn::Sub: AutomatedUITestPipeline-${AWS::StackName}
+      RoleArn:
+          Fn::GetAtt: [ CodePipelineRole, Arn ]
+      Stages:
+        -
+          Name: WebsiteSource
+          Actions:
+            -
+              Name: UITestSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              OutputArtifacts:
+                -
+                  Name: UITestSourceOutput
+              Configuration:
+                BranchName: master
+                RepositoryName:
+                  Ref: SourceRepo
+              RunOrder: 1
+        -
+          Name: UITest
+          Actions:
+            -
+              Name: DeployTestSite
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              Configuration:
+                FunctionName:
+                  Ref: S3UploadFunction
+                UserParameters:
+                  Fn::Join: [
+                    "",
+                    [
+                      "{\"bucket\":\"",
+                      Ref: TestWebsite,
+                      "\",\"path\":\"website\"}"
+                    ]]
+              OutputArtifacts:
+                -
+                  Name: DeployedTestSite
+              RunOrder: 1
+            -
+              Name: DeployStatusPage
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              Configuration:
+                FunctionName:
+                  Ref: S3UploadFunction
+                UserParameters:
+                  Fn::Join: [
+                    "",
+                    [
+                      "{\"bucket\":\"",
+                      Ref: StatusWebsite,
+                      "\",\"path\":\"status\"}"
+                    ]]
+              OutputArtifacts:
+                -
+                  Name: DeployedStatusPage
+              RunOrder: 1
+            -
+              Name: TestOnChrome
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              OutputArtifacts:
+                -
+                  Name: TestOnChromeArtifact
+              Configuration:
+                ProjectName:
+                  Ref: TestChromeProject
+              RunOrder: 2
+            -
+              Name: TestOnFirefox
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              OutputArtifacts:
+                -
+                  Name: TestOnFirefoxArtifact
+              Configuration:
+                ProjectName:
+                  Ref: TestFirefoxProject
+              RunOrder: 2
+            -
+              Name: TestOnPhantomJS
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              OutputArtifacts:
+                -
+                  Name: TestOnPhantomJSArtifact
+              Configuration:
+                ProjectName:
+                  Ref: TestPhantomJSProject
+              RunOrder: 2
+        -
+          Name: Approval
+          Actions:
+            -
+              Name: DeployApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration:
+                NotificationArn:
+                  Fn::Sub: arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ApprovalTopic}
+                CustomData: Approve once UI testing has been completed.
+              RunOrder: 1
+        -
+          Name: Production
+          Actions:
+            -
+              Name: DeployProduction
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              InputArtifacts:
+                - Name: UITestSourceOutput
+              Configuration:
+                FunctionName:
+                  Ref: S3UploadFunction
+                UserParameters:
+                  Fn::Join: [
+                    "",
+                    [
+                      "{\"bucket\":\"",
+                      Ref: ProductionBucket,
+                      "\",\"path\":\"website\"}"
+                    ]]
+              OutputArtifacts:
+                -
+                  Name: DeployedProduction
+              RunOrder: 1
+
+      ArtifactStore:
+        Type: S3
+        Location:
+          Ref: CodePipelineArtifact
+
+Outputs:
+  TestWebsite:
+    Description: "URL of Test Website"
+    Value:
+      Fn::GetAtt: [ TestWebsite, WebsiteURL ]
+
+  StatusWebsite:
+    Description: "URL of Status Website"
+    Value:
+      Fn::GetAtt: [ StatusWebsite, WebsiteURL ]

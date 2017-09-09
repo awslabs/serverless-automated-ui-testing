@@ -1,0 +1,60 @@
+<!DOCTYPE html PUBLIC"-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!--
+Copyright 2017-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+    http://aws.amazon.com/asl/
+or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied.
+See the License for the specific language governing permissions and limitations under the License.
+-->
+<html>
+  <head>
+    <title>AWS CodeBuild automation - Dropdown.</title>
+  </head>
+
+  <body>
+    <script type="text/javascript">
+    function dropdown_text(selected)
+    {
+      if (selected == 'CB')
+        {
+        display_text = "<a href=\"https://aws.amazon.com/codebuild/\">AWS CodeBuild</a> is a fully managed build service that compiles source code, runs tests, and produces software packages that are ready to deploy.";
+        }
+      else if (selected == 'CP')
+        {
+        display_text = "<a href=\"https://aws.amazon.com/codepipeline/\">AWS CodePipeline</a> is a continuous integration and continuous delivery service for fast and reliable application and infrastructure updates.";
+        }
+      else if (selected == 'CC')
+        {
+        display_text = "<a href=\"https://aws.amazon.com/codecommit/\">AWS CodeCommit</a> is a fully-managed source control service that makes it easy for companies to host secure and highly scalable private Git repositories.";
+        }
+      else if (selected == 'CD')
+        {
+        display_text = "<a href=\"https://aws.amazon.com/codedeploy/\">AWS CodeDeploy</a> is a service that automates code deployments to any instance, including Amazon EC2 instances and instances running on-premises.";
+        }
+      else if (selected == 'CS')
+        {
+        display_text = "<a href=\"https://aws.amazon.com/codestar/\">AWS CodeStar</a> enables you to quickly develop, build, and deploy applications on AWS. AWS CodeStar provides a unified user interface, enabling you to easily manage your software development activities in one place.";
+        }
+      else
+        {
+        display_text = ""
+        }
+      document.getElementById("dvidrop").innerHTML = display_text;
+    }
+    </script>
+    <h1>Select from the dropdown...</h1>
+      <form name=dropdown_form>
+        <select onChange="dropdown_text(this.value)" name="cbdropdown">
+          <option id="emp" value="empty"></option>
+          <option id="CP" value="CP">AWS CodePipeline</option>
+          <option id="CC" value="CC">AWS CodeCommit</option>
+          <option id="CB" value="CB">AWS CodeBuild</option>
+          <option id="CD" value="CD">AWS CodeDeploy</option>
+          <option id="CS" value="CS">AWS CodeStar</option>
+        </select>
+        <br><br>
+        <div id = "dvidrop"></div>
+      </form>
+  </body>
+</html>

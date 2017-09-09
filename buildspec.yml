@@ -1,0 +1,36 @@
+version: 0.2
+
+env:
+  variables:
+    BROWSER: "chrome"
+    WebURL: "https://sampletestweb.s3-eu-west-1.amazonaws.com/website/index.html"
+    ArtifactBucket: "codebuild-demo-artifact-repository"
+    MODULES: "mod1"
+    ModuleTable: "test-modules"
+    StatusTable: "blog-test-status"
+
+phases:
+  install:
+    commands:
+      - apt-get update
+      - apt-get -y upgrade
+      - apt-get install xvfb python python-pip build-essential -y
+      - pip install --upgrade pip
+      - pip install selenium
+      - pip install awscli
+      - pip install requests
+      - pip install boto3
+      - cp xvfb.init /etc/init.d/xvfb
+      - chmod +x /etc/init.d/xvfb
+      - update-rc.d xvfb defaults
+      - service xvfb start
+      - export PATH="$PATH:`pwd`/webdrivers"
+  pre_build:
+    commands:
+      - python prepare_test.py
+  build:
+    commands:
+      - export DISPLAY=:5
+      - cd tests
+      - echo "Executing simple test..."
+      - python testsuite.py

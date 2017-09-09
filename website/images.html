@@ -1,0 +1,30 @@
+<!DOCTYPE html PUBLIC"-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!--
+Copyright 2017-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+    http://aws.amazon.com/asl/
+or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied.
+See the License for the specific language governing permissions and limitations under the License.
+-->
+<html>
+  <head>
+    <title>AWS CodeBuild automation - Images.</title>
+  </head>
+
+  <body>
+    <script type="text/javascript">
+      function fill_text()
+      {
+        var elm = document.getElementById('form_field_id')
+        var form_value = elm.textContent || elm.innerText;
+        var display_text = "You have entered '" + form_value + "' in the form.";
+        document.getElementById('formtext').innerHTML = display_text;
+      }
+    </script>
+    <h1>Some images to test.</h1>
+      <img id= "image1" src="test1.png" alt="Test Image 1" style="width:200px;height:200px;">
+      <img id= "image2" src="test2.png" alt="Test Image 2" style="width:200px;height:200px;">
+      <img id= "image3" src="test3.png" alt="Broken Image">
+  </body>
+</html>
