@@ -12,9 +12,27 @@ See the License for the specific language governing permissions and limitations 
     <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
     <title>Test Status</title>
     <style type="text/css">
-      #body {margin:10px;font-size:1.25em;}
-      table {border-collapse:collapse;border:1px solid #7f7f7f;}
-      td {border:1px solid #7f7f7f;width:50px;height:50px;text-align:center;}
+    h1 .beta { color: #E88D35; }
+
+    .rounded-border { -moz-border-radius: 6px; -webkit-border-radius: 6px; -o-border-radius: 6px; -ms-border-radius: 6px; -khtml-border-radius: 6px; border-radius: 6px; border: 1px solid lightgray; padding: 4px 8px 10px 8px }
+    label { color: #E88D35; font-size: medium; font-weight: bolder; position: relative; top: -16px; left: 10px; background-color: white; margin-left: 5px; margin-right: 5px; }
+
+    .result-groups { margin: 20px 0px 10px; }
+    table { background-color: #FFF; border-collapse: collapse; font-family: 'Helvetica Neue' ;font-size: 7pt; text-align: center; }
+    td { color: #3D3D3D; border: 2px solid #CDCDCD; padding: 4px; padding-left: 5px; padding-right: 5px; }
+    th { padding: 4px; border: 2px solid #CDCDCD; padding-left: 5px; padding-right: 5px; text-align: center; }
+    tr.highlight { background-color: #99FF99; font-weight: bold; }
+    thead tr { background-color: #E6EEEE; border: 1px solid white; font-size: 7pt; }
+
+    span.status { padding: 3px; border-radius: 3px; }
+    .status { text-align: center; }
+    .status_failed { background-color: #FF9999; }
+    .status_error { background-color: #FF9999; }
+    .status_passed { background-color: #99FF99; }
+    .status_missing { background-color: #DDD; }
+    .status_skipped { background-color: #AAA; }
+    .status_canceled { background-color: #FFF; }
+    .status_in_progress { background-color: #DDD; }
     </style>
     <script type="text/javascript"  src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
     <script type="text/javascript"  src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
@@ -23,9 +41,9 @@ See the License for the specific language governing permissions and limitations 
   </head>
 
   <body>
-    <h1>Test Status!!!
-      <button id="displaybtn" type="button" onclick = "tableCreate()">Refresh</button>
-    </h1>
+    <font face="Helvetica Neue" size="5">Test Status!!!</font>
+    <button id="displaybtn" type="button" onclick = "tableCreate()">Refresh</button>
+    <br>
     <div id="status_table" onclick = "tableCreate()"></div>
   </body>
 </html>
