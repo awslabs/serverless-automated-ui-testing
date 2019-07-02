@@ -17,7 +17,7 @@ Resources:
     Type: "AWS::S3::Bucket"
     DeletionPolicy: Retain
     Properties:
-      AccessControl: PublicRead
+      AccessControl: Private
       BucketName:
         Fn::Sub: test-website-${AWS::StackName}
       WebsiteConfiguration:
@@ -31,7 +31,7 @@ Resources:
     Type: "AWS::S3::Bucket"
     DeletionPolicy: Retain
     Properties:
-      AccessControl: PublicRead
+      AccessControl: Private
       BucketName:
         Fn::Sub: status-website-${AWS::StackName}
       WebsiteConfiguration:
