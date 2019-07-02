@@ -1,12 +1,7 @@
 # Serverless-Automated-UI-Testing
 
 Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
-
-    http://aws.amazon.com/asl/
-
-or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
+SPDX-License-Identifier: MIT-0
 
 ***
 
@@ -50,7 +45,7 @@ Update the configuration file with appropriate values for *SourceRepo, ApprovalT
 Once the configuration file has been updated, execute the following command to create the CloudFormation stack which will create the required CodePipeline.
 
 ```bash
-aws cloudformation create-stack --stack-name automated-ui-testing --template-body file://automated-ui-testing.yml --parameters file://automated-ui-testing-params.json --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name automated-ui-testing --template-body file://automated-ui-testing.yaml --parameters file://automated-ui-testing-params.json --capabilities CAPABILITY_NAMED_IAM
 ```
 
 Once the CloudFormation successfully creates the stack, it would have created a CodePipeline with similar stages as shown below.
