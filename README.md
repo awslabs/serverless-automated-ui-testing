@@ -45,7 +45,7 @@ Update the configuration file with appropriate values for *SourceRepo, ApprovalT
 Once the configuration file has been updated, execute the following command to create the CloudFormation stack which will create the required CodePipeline.
 
 ```bash
-aws cloudformation create-stack --stack-name automated-ui-testing --template-body file://automated-ui-testing.yaml --parameters file://automated-ui-testing-params.json --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name automated_ui_testing --template-body file://automated-ui-testing.yaml --parameters file://automated-ui-testing-params.json --capabilities CAPABILITY_NAMED_IAM
 ```
 
 Once the CloudFormation successfully creates the stack, it would have created a CodePipeline with similar stages as shown below.
